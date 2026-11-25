@@ -35,6 +35,7 @@ import { auth, hasFirebaseConfig } from './firebase';
 import { api, setAuthToken } from './services/api';
 import {
   ensureFirebaseUserProfile,
+  extractFirebaseUserMessage,
   firebaseRuntime,
   getFirebaseCategories,
   signOutFirebase,
@@ -201,7 +202,7 @@ export default function App() {
     };
   }, [user?.id, sessionMode, mergeConversationsPreservingDrafts, showToast]);
 
-  // Restore existing Firebase Google session on reload
+  // Restore existing Firebase session on reload
   useEffect(() => {
     if (!hasFirebaseConfig) return;
     const isAutostart =
@@ -210,8 +211,9 @@ export default function App() {
     if (isAutostart) return;
 
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      if (!fbUser || !fbUser.emailVerified) return;
+      if (!fbUser) return;
       if (sessionModeRef.current === 'local' && userRef.current) return;
+      if (sessionModeRef.current === 'firebase' && userRef.current?.id === fbUser.uid) return;
       try {
         const profile = await ensureFirebaseUserProfile(fbUser);
         setSessionMode('firebase');
@@ -567,50 +569,74 @@ export default function App() {
   };
 
   const handleSendMessage = async (participantId: string, text: string) => {
-    if (sessionMode === 'firebase' && user) {
-      if (isDemoEntityId(participantId)) {
-        const now = new Date().toISOString();
-        setDemoConversations((prev) =>
-          prev.map((c) =>
-            c.participantId === participantId
-              ? {
-                  ...c,
-                  updatedAt: now,
-                  messages: [
-                    ...c.messages,
-                    {
-                      id: `demo-msg-${Date.now()}`,
-                      senderId: user.id,
-                      senderName: user.displayName,
-                      text,
-                      sentAt: now,
-                    },
-                  ],
-                }
-              : c,
-          ),
+    try {
+      if (sessionMode === 'firebase' && user) {
+        if (isDemoEntityId(participantId)) {
+          const now = new Date().toISOString();
+          const newMsg = {
+            id: `demo-msg-${Date.now()}`,
+            senderId: user.id,
+            senderName: user.displayName,
+            text,
+            sentAt: now,
+          };
+          setDemoConversations((prev) => {
+            const exists = prev.some((c) => c.participantId === participantId);
+            if (exists) {
+              return prev.map((c) =>
+                c.participantId === participantId
+                  ? {
+                      ...c,
+                      updatedAt: now,
+                      messages: [...c.messages, newMsg],
+                    }
+                  : c,
+              );
+            }
+            const matched = spotlights.find((s) => s.id === participantId);
+            const fallbackThread: ConversationThread = {
+              id: `temp-${participantId}`,
+              participantId,
+              participantName: matched?.displayName ?? 'Membro ELO+',
+              participantRole: matched
+                ? `${matched.roleTitle} · ${matched.mode}`
+                : 'Comunidade ELO+',
+              participantAvatarUrl: matched?.avatarUrl ?? '',
+              unreadCount: 0,
+              updatedAt: now,
+              messages: [newMsg],
+            };
+            return [fallbackThread, ...prev];
+          });
+          return;
+        }
+
+        const partnerThread = combinedConversations.find((c) => c.participantId === participantId);
+        await firebaseRuntime.sendMessage(
+          user,
+          participantId,
+          text,
+          partnerThread
+            ? {
+                name: partnerThread.participantName,
+                role: partnerThread.participantRole,
+                avatarUrl: partnerThread.participantAvatarUrl,
+              }
+            : undefined,
         );
         return;
       }
 
-      const partnerThread = combinedConversations.find((c) => c.participantId === participantId);
-      await firebaseRuntime.sendMessage(
-        user,
-        participantId,
-        text,
-        partnerThread
-          ? {
-              name: partnerThread.participantName,
-              role: partnerThread.participantRole,
-              avatarUrl: partnerThread.participantAvatarUrl,
-            }
-          : undefined,
+      const res = await api.sendMessage(participantId, text);
+      setConversations(res.conversations);
+    } catch (err) {
+      const friendly = extractFirebaseUserMessage(
+        err,
+        'Não foi possível enviar a mensagem. Tente novamente.',
       );
-      return;
+      showToast(friendly, 'danger');
+      throw new Error(friendly);
     }
-
-    const res = await api.sendMessage(participantId, text);
-    setConversations(res.conversations);
   };
 
   const handleMarkConversationRead = useCallback(

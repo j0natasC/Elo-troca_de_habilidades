@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { IonIcon } from '@ionic/react';
 import { arrowBackOutline, sendOutline, swapHorizontalOutline } from 'ionicons/icons';
 import { UserAvatar } from './UserAvatar';
@@ -25,9 +25,15 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
 }) => {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const activeThread =
     conversations.find((c) => c.participantId === activeParticipantId) ?? conversations[0] ?? null;
+
+  useEffect(() => {
+    setSendError(null);
+  }, [activeThread?.participantId]);
 
   useEffect(() => {
     if (activeThread && activeThread.unreadCount > 0) {
@@ -35,16 +41,35 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
     }
   }, [activeThread, onMarkConversationRead]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeThread || !draft.trim() || sending) return;
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [activeThread?.id, activeThread?.messages.length]);
+
+  const submitMessage = async () => {
+    const cleanText = draft.trim();
+    if (!activeThread || !cleanText || sending) return;
+    setSendError(null);
     setSending(true);
     try {
-      await onSendMessage(activeThread.participantId, draft.trim());
+      await onSendMessage(activeThread.participantId, cleanText);
       setDraft('');
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message.trim()
+          ? err.message
+          : 'Não foi possível enviar a mensagem. Tente novamente.';
+      setSendError(msg);
     } finally {
       setSending(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void submitMessage();
   };
 
   return (
@@ -161,7 +186,10 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   </button>
                 </div>
 
-                <div className="flex-1 p-4 space-y-3 overflow-y-auto max-h-[380px]">
+                <div
+                  ref={messagesContainerRef}
+                  className="flex-1 p-4 space-y-3 overflow-y-auto max-h-[380px]"
+                >
                   {activeThread.messages.length === 0 ? (
                     <p className="text-center text-xs text-slate-400 py-8">
                       Envie a primeira mensagem para {activeThread.participantName}.
@@ -175,7 +203,7 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                           className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
-                            className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                            className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed break-words ${
                               isMine
                                 ? 'bg-[#1D3B58] text-white rounded-br-sm'
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-bl-sm'
@@ -199,6 +227,15 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                   )}
                 </div>
 
+                {sendError && (
+                  <div
+                    role="alert"
+                    className="mx-3 mt-2 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300"
+                  >
+                    {sendError}
+                  </div>
+                )}
+
                 <form
                   onSubmit={handleSubmit}
                   className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2"
@@ -210,18 +247,23 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
                     id="chat-input"
                     type="text"
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    maxLength={1000}
+                    autoComplete="off"
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      if (sendError) setSendError(null);
+                    }}
                     placeholder={`Mensagem para ${activeThread.participantName}...`}
-                    className="flex-1 h-11 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
+                    className="flex-1 min-w-0 h-11 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1D3B58]/30 dark:focus:ring-[#77BC43]/40"
                   />
                   <button
                     type="submit"
                     disabled={sending || !draft.trim()}
                     aria-label="Enviar mensagem"
-                    className="h-11 px-4 rounded-xl bg-[#1D3B58] hover:bg-[#162f47] text-white font-semibold text-sm flex items-center gap-1.5 disabled:opacity-50"
+                    className="h-11 px-4 rounded-xl bg-[#1D3B58] hover:bg-[#162f47] text-white font-semibold text-sm flex items-center gap-1.5 shrink-0 whitespace-nowrap disabled:opacity-50 transition-colors"
                   >
                     <IonIcon icon={sendOutline} />
-                    <span className="hidden sm:inline">Enviar</span>
+                    <span>{sending ? 'Enviando...' : 'Enviar'}</span>
                   </button>
                 </form>
               </>

@@ -6,13 +6,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // --- Phase 3: Global Primitives ---
+    // --- Global Primitives ---
     function isSignedIn() {
-      return request.auth != null;
+      return request.auth != null && request.auth.uid is string && request.auth.uid.size() > 0;
     }
 
-    function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+    function isAuthenticatedUser() {
+      return isSignedIn();
     }
 
     function isOwner(userId) {
@@ -310,10 +310,10 @@ service cloud.firestore {
     // Public directory profiles (Zero PII)
     match /publicProfiles/{profileId} {
       allow get: if isSignedIn() && isValidId(profileId) && (
-        profileId == request.auth.uid || existing().privacyPublicProfile == true
+        profileId == request.auth.uid || (resource != null && existing().privacyPublicProfile == true)
       );
       allow list: if isSignedIn() && existing().privacyPublicProfile == true;
-      allow create: if isVerifiedUser()
+      allow create: if isAuthenticatedUser()
         && isValidId(profileId)
         && isValidPublicProfile(incoming())
         && profileId == request.auth.uid
@@ -321,7 +321,7 @@ service cloud.firestore {
         && incoming().isDemo == false
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isVerifiedUser()
+      allow update: if isAuthenticatedUser()
         && isValidId(profileId)
         && isValidPublicProfile(incoming())
         && profileId == request.auth.uid
@@ -345,21 +345,21 @@ service cloud.firestore {
           'privacyAllowMessages',
           'updatedAt'
         ]);
-      allow delete: if isVerifiedUser() && isValidId(profileId) && profileId == request.auth.uid;
+      allow delete: if isAuthenticatedUser() && isValidId(profileId) && profileId == request.auth.uid;
     }
 
     // Private user account data (PII isolated to owner)
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
       allow list: if isSignedIn() && existing().uid == request.auth.uid;
-      allow create: if isVerifiedUser()
+      allow create: if isAuthenticatedUser()
         && isValidId(userId)
         && isValidPrivateUser(incoming())
         && userId == request.auth.uid
         && incoming().uid == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isVerifiedUser()
+      allow update: if isAuthenticatedUser()
         && isValidId(userId)
         && isValidPrivateUser(incoming())
         && userId == request.auth.uid
@@ -367,12 +367,12 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'age', 'settings', 'updatedAt']);
-      allow delete: if isVerifiedUser() && isValidId(userId) && userId == request.auth.uid;
+      allow delete: if isAuthenticatedUser() && isValidId(userId) && userId == request.auth.uid;
 
       match /notifications/{notificationId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(notificationId);
         allow list: if isOwner(userId) && existing().recipientId == request.auth.uid;
-        allow create: if isVerifiedUser()
+        allow create: if isAuthenticatedUser()
           && isValidId(userId)
           && isValidId(notificationId)
           && isValidNotification(incoming())
@@ -382,7 +382,7 @@ service cloud.firestore {
           && incoming().read == false
           && incoming().createdAt == request.time
           && existsAfter(/databases/$(database)/documents/publicProfiles/$(userId));
-        allow update: if isVerifiedUser()
+        allow update: if isAuthenticatedUser()
           && isValidId(userId)
           && isValidId(notificationId)
           && isValidNotification(incoming())
@@ -392,19 +392,29 @@ service cloud.firestore {
           && incoming().senderId == existing().senderId
           && incoming().createdAt == existing().createdAt
           && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-        allow delete: if isVerifiedUser() && isValidId(userId) && isValidId(notificationId) && userId == request.auth.uid;
+        allow delete: if isAuthenticatedUser() && isValidId(userId) && isValidId(notificationId) && userId == request.auth.uid;
       }
     }
 
     // Two-participant real-time chats
     match /chats/{chatId} {
       allow get: if isSignedIn() && isValidId(chatId) && (
-        existing().participantA == request.auth.uid || existing().participantB == request.auth.uid
+        (
+          resource == null && (
+            chatId.matches('^' + request.auth.uid + '__[a-zA-Z0-9_\\-]+$') ||
+            chatId.matches('^[a-zA-Z0-9_\\-]+__' + request.auth.uid + '$')
+          )
+        )
+        || (
+          resource != null && (
+            existing().participantA == request.auth.uid || existing().participantB == request.auth.uid
+          )
+        )
       );
       allow list: if isSignedIn() && (
         existing().participantA == request.auth.uid || existing().participantB == request.auth.uid
       );
-      allow create: if isVerifiedUser()
+      allow create: if isAuthenticatedUser()
         && isValidId(chatId)
         && isValidChat(incoming())
         && chatId == (incoming().participantA + '__' + incoming().participantB)
@@ -414,7 +424,7 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && exists(/databases/$(database)/documents/publicProfiles/$(incoming().participantA))
         && exists(/databases/$(database)/documents/publicProfiles/$(incoming().participantB));
-      allow update: if isVerifiedUser()
+      allow update: if isAuthenticatedUser()
         && isValidId(chatId)
         && isValidChat(incoming())
         && (existing().participantA == request.auth.uid || existing().participantB == request.auth.uid)
@@ -459,10 +469,8 @@ service cloud.firestore {
         );
         allow list: if isSignedIn()
           && existing().participants is list
-          && existing().participants.size() == 2
-          && existing().participants[0] is string
           && request.auth.uid in existing().participants;
-        allow create: if isVerifiedUser()
+        allow create: if isAuthenticatedUser()
           && isValidId(chatId)
           && isValidId(messageId)
           && isValidChatMessage(incoming())
@@ -484,7 +492,7 @@ service cloud.firestore {
       allow list: if isSignedIn() && (
         existing().proposerId == request.auth.uid || existing().receiverId == request.auth.uid
       );
-      allow create: if isVerifiedUser()
+      allow create: if isAuthenticatedUser()
         && isValidId(exchangeId)
         && isValidExchange(incoming())
         && incoming().id == exchangeId
@@ -494,7 +502,7 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && exists(/databases/$(database)/documents/publicProfiles/$(incoming().receiverId));
-      allow update: if isVerifiedUser()
+      allow update: if isAuthenticatedUser()
         && isValidId(exchangeId)
         && isValidExchange(incoming())
         && existing().status != 'CANCELADA'
@@ -552,10 +560,8 @@ service cloud.firestore {
         );
         allow list: if isSignedIn()
           && existing().exchangeParticipants is list
-          && existing().exchangeParticipants.size() == 2
-          && existing().exchangeParticipants[0] is string
           && request.auth.uid in existing().exchangeParticipants;
-        allow create: if isVerifiedUser()
+        allow create: if isAuthenticatedUser()
           && isValidId(exchangeId)
           && isValidId(reviewerId)
           && isValidReview(incoming())
@@ -576,7 +582,7 @@ service cloud.firestore {
     match /supportTickets/{ticketId} {
       allow get: if isOwner(existing().userId) && isValidId(ticketId);
       allow list: if isSignedIn() && existing().userId == request.auth.uid;
-      allow create: if isVerifiedUser()
+      allow create: if isAuthenticatedUser()
         && isValidId(ticketId)
         && isValidSupportTicket(incoming())
         && incoming().id == ticketId

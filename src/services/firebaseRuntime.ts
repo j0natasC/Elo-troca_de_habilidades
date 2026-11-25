@@ -1,6 +1,5 @@
 import {
   createUserWithEmailAndPassword,
-  sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -82,6 +81,33 @@ function buildRoleLabel(headline: string, skills: SkillItem[]): string {
   const mode = skills[0]?.mode || 'Presencial e Remoto';
   if (cleanHeadline) return truncateText(`${cleanHeadline} · ${mode}`, BLUEPRINT_LIMITS.HEADLINE_MAX);
   return truncateText(`Membro ELO+ · ${mode}`, BLUEPRINT_LIMITS.HEADLINE_MAX);
+}
+
+export function extractFirebaseUserMessage(err: unknown, fallback: string): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  if (!raw) return fallback;
+
+  let inner = raw;
+  if (raw.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { error?: string };
+      if (parsed?.error) inner = parsed.error;
+    } catch {
+      // Keep raw message if JSON parsing fails
+    }
+  }
+
+  const lower = inner.toLowerCase();
+  if (lower.includes('quota exceeded')) {
+    return 'Limite diário gratuito do banco de dados atingido. Tente novamente mais tarde.';
+  }
+  if (lower.includes('permission') || lower.includes('insufficient permissions')) {
+    return 'Permissão negada ao gravar no Firestore. Verifique se você está autenticado e se as regras foram publicadas.';
+  }
+  if (lower.includes('offline') || lower.includes('network')) {
+    return 'Sem conexão com a nuvem no momento. Verifique sua internet e tente novamente.';
+  }
+  return inner || fallback;
 }
 
 function publicAndPrivateToUserProfile(
@@ -169,20 +195,26 @@ function normalizeUserForPublicDoc(user: UserProfile) {
 
 const inFlightProfileSync = new Map<string, Promise<UserProfile>>();
 
-export async function ensureFirebaseUserProfile(fbUser: FirebaseUser): Promise<UserProfile> {
+export async function ensureFirebaseUserProfile(
+  fbUser: FirebaseUser,
+  displayNameOverride?: string,
+): Promise<UserProfile> {
   const existingPromise = inFlightProfileSync.get(fbUser.uid);
   if (existingPromise) {
     return existingPromise;
   }
 
-  const task = ensureFirebaseUserProfileInternal(fbUser).finally(() => {
+  const task = ensureFirebaseUserProfileInternal(fbUser, displayNameOverride).finally(() => {
     inFlightProfileSync.delete(fbUser.uid);
   });
   inFlightProfileSync.set(fbUser.uid, task);
   return task;
 }
 
-async function ensureFirebaseUserProfileInternal(fbUser: FirebaseUser): Promise<UserProfile> {
+async function ensureFirebaseUserProfileInternal(
+  fbUser: FirebaseUser,
+  displayNameOverride?: string,
+): Promise<UserProfile> {
   const uid = fbUser.uid;
   const pubRef = doc(db, 'publicProfiles', uid);
   const privRef = doc(db, 'users', uid);
@@ -204,11 +236,11 @@ async function ensureFirebaseUserProfileInternal(fbUser: FirebaseUser): Promise<
     );
   }
 
-  const rawName = (fbUser.displayName || '').trim();
+  const rawName = (displayNameOverride || fbUser.displayName || '').trim();
   const safeName = rawName.length >= 2 ? rawName : `${rawName || 'Membro'} ELO+`.trim();
   const fullName = truncateText(safeName, BLUEPRINT_LIMITS.FULL_NAME_MAX);
-  const displayName = truncateText(extractFirstName(fullName), BLUEPRINT_LIMITS.DISPLAY_NAME_MAX);
-  const email = truncateText(fbUser.email || '', BLUEPRINT_LIMITS.EMAIL_MAX);
+  const displayName = truncateText(extractFirstName(fullName), BLUEPRINT_LIMITS.DISPLAY_NAME_MAX) || 'Membro';
+  const email = truncateText(fbUser.email || '', BLUEPRINT_LIMITS.EMAIL_MAX) || `${uid}@eloplus.local`;
 
   const batch = writeBatch(db);
   if (!pubSnap.exists()) {
@@ -284,18 +316,16 @@ export async function registerWithEmailFirebase(payload: {
   name: string;
   email: string;
   password: string;
-}): Promise<{ needsEmailVerification: boolean; email: string }> {
+}): Promise<AuthResponse> {
   const cleanName = payload.name.trim();
   const cleanEmail = payload.email.trim().toLowerCase();
   const cred = await createUserWithEmailAndPassword(auth, cleanEmail, payload.password);
   if (cleanName) {
     await updateProfile(cred.user, { displayName: cleanName });
   }
-  await sendEmailVerification(cred.user);
-  return {
-    needsEmailVerification: true,
-    email: cred.user.email || cleanEmail,
-  };
+  const user = await ensureFirebaseUserProfile(cred.user, cleanName);
+  const token = await cred.user.getIdToken();
+  return { token, user };
 }
 
 export async function loginWithEmailFirebase(
@@ -303,37 +333,9 @@ export async function loginWithEmailFirebase(
   password: string,
 ): Promise<AuthResponse> {
   const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-  await cred.user.reload();
-  const freshUser = auth.currentUser || cred.user;
-  if (!freshUser.emailVerified) {
-    const err = new Error('Confirme seu e-mail pelo link enviado para sincronizar seu perfil na nuvem.') as Error & {
-      code?: string;
-    };
-    err.code = 'elo/email-not-verified';
-    throw err;
-  }
-  const user = await ensureFirebaseUserProfile(freshUser);
-  const token = await freshUser.getIdToken();
+  const user = await ensureFirebaseUserProfile(cred.user);
+  const token = await cred.user.getIdToken();
   return { token, user };
-}
-
-export async function checkEmailVerifiedAndEnterFirebase(): Promise<AuthResponse | null> {
-  const current = auth.currentUser;
-  if (!current) return null;
-  await current.reload();
-  const freshUser = auth.currentUser || current;
-  if (!freshUser.emailVerified) {
-    return null;
-  }
-  const user = await ensureFirebaseUserProfile(freshUser);
-  const token = await freshUser.getIdToken();
-  return { token, user };
-}
-
-export async function resendVerificationEmailFirebase(): Promise<void> {
-  if (auth.currentUser && !auth.currentUser.emailVerified) {
-    await sendEmailVerification(auth.currentUser);
-  }
 }
 
 export async function sendPasswordResetFirebase(email: string): Promise<void> {
@@ -873,37 +875,78 @@ export const firebaseRuntime = {
     const cleanText = truncateText(text, BLUEPRINT_LIMITS.CHAT_TEXT_MAX);
     if (!cleanText) throw new Error('Escreva uma mensagem antes de enviar.');
 
-    const [participantA, participantB] = sortedUidPair(user.id, participantId);
+    const safeMyId = sanitizeId(user.id);
+    const safePartnerId = sanitizeId(participantId);
+    if (safeMyId === safePartnerId) {
+      throw new Error('Você não pode enviar mensagens para si mesmo.');
+    }
+
+    const [participantA, participantB] = sortedUidPair(safeMyId, safePartnerId);
     const chatId = canonicalChatId(participantA, participantB);
     const chatRef = doc(db, 'chats', chatId);
-    const partnerRef = doc(db, 'publicProfiles', participantId);
+    const partnerRef = doc(db, 'publicProfiles', safePartnerId);
 
     let chatSnap;
-    let partnerSnap;
     try {
-      [chatSnap, partnerSnap] = await Promise.all([getDoc(chatRef), getDoc(partnerRef)]);
+      chatSnap = await getDoc(chatRef);
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, `chats/${chatId}`);
     }
 
-    if (!partnerSnap.exists()) {
+    let partnerSnap = null;
+    try {
+      partnerSnap = await getDoc(partnerRef);
+    } catch (error) {
+      if (!chatSnap.exists()) {
+        handleFirestoreError(error, OperationType.GET, `publicProfiles/${safePartnerId}`);
+      }
+    }
+
+    if (!chatSnap.exists() && (!partnerSnap || !partnerSnap.exists())) {
       throw new Error('Perfil de destino não encontrado na nuvem.');
     }
 
-    const partnerData = partnerSnap.data() as Record<string, unknown>;
-    const partnerName = truncateText(
-      String(partnerData.displayName || partnerFallback?.name || 'Membro'),
-      BLUEPRINT_LIMITS.FULL_NAME_MAX,
-    );
-    const partnerSkills = Array.isArray(partnerData.skills)
-      ? (partnerData.skills as SkillItem[])
+    const partnerData = partnerSnap?.exists()
+      ? (partnerSnap.data() as Record<string, unknown>)
+      : null;
+
+    if (partnerData && partnerData.privacyAllowMessages === false) {
+      throw new Error('Este participante desativou o recebimento de novas mensagens.');
+    }
+
+    const prevData = chatSnap.exists() ? (chatSnap.data() as Record<string, unknown>) : null;
+    const isSenderA = participantA === safeMyId;
+
+    const existingPartnerName = prevData
+      ? String(isSenderA ? prevData.participantBName : prevData.participantAName)
+      : '';
+    const existingPartnerRole = prevData
+      ? String(isSenderA ? prevData.participantBRole : prevData.participantARole)
+      : '';
+    const existingPartnerAvatar = prevData
+      ? String(isSenderA ? prevData.participantBAvatarUrl : prevData.participantAAvatarUrl)
+      : '';
+
+    const partnerName =
+      truncateText(
+        String(partnerData?.displayName ?? ''),
+        BLUEPRINT_LIMITS.FULL_NAME_MAX,
+      ) ||
+      truncateText(existingPartnerName, BLUEPRINT_LIMITS.FULL_NAME_MAX) ||
+      truncateText(partnerFallback?.name ?? '', BLUEPRINT_LIMITS.FULL_NAME_MAX) ||
+      'Membro';
+
+    const partnerSkills = Array.isArray(partnerData?.skills)
+      ? (partnerData!.skills as SkillItem[])
       : [];
-    const partnerRole = truncateText(
-      buildRoleLabel(String(partnerData.headline || ''), partnerSkills),
-      BLUEPRINT_LIMITS.HEADLINE_MAX,
-    );
+    const partnerRole = partnerData
+      ? buildRoleLabel(String(partnerData.headline || ''), partnerSkills)
+      : truncateText(
+          existingPartnerRole || partnerFallback?.role || 'Membro ELO+',
+          BLUEPRINT_LIMITS.HEADLINE_MAX,
+        );
     const partnerAvatarUrl = truncateText(
-      String(partnerData.avatarUrl || ''),
+      String(partnerData?.avatarUrl ?? existingPartnerAvatar ?? partnerFallback?.avatarUrl ?? ''),
       BLUEPRINT_LIMITS.MEDIA_URL_MAX,
     );
 
@@ -911,8 +954,6 @@ export const firebaseRuntime = {
     const myRole = buildRoleLabel(user.headline, user.skills);
     const myAvatarUrl = truncateText(user.avatarUrl, BLUEPRINT_LIMITS.MEDIA_URL_MAX);
 
-    const isSenderA = participantA === user.id;
-    const prevData = chatSnap.exists() ? (chatSnap.data() as Record<string, unknown>) : null;
     const prevUnreadA = Number(prevData?.unreadA || 0);
     const prevUnreadB = Number(prevData?.unreadB || 0);
 
@@ -930,7 +971,7 @@ export const firebaseRuntime = {
         unreadA: isSenderA ? 0 : 1,
         unreadB: isSenderA ? 1 : 0,
         lastMessageText: cleanText,
-        lastSenderId: user.id,
+        lastSenderId: safeMyId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -945,7 +986,7 @@ export const firebaseRuntime = {
         unreadA: isSenderA ? 0 : Math.min(9999, prevUnreadA + 1),
         unreadB: isSenderA ? Math.min(9999, prevUnreadB + 1) : 0,
         lastMessageText: cleanText,
-        lastSenderId: user.id,
+        lastSenderId: safeMyId,
         updatedAt: serverTimestamp(),
       });
     }
@@ -953,24 +994,26 @@ export const firebaseRuntime = {
     const msgId = sanitizeId(`msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
     batch.set(doc(db, 'chats', chatId, 'messages', msgId), {
       id: msgId,
-      senderId: user.id,
+      senderId: safeMyId,
       senderName: myName,
       participants: [participantA, participantB],
       text: cleanText,
       sentAt: serverTimestamp(),
     });
 
-    const notifId = sanitizeId(`notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
-    batch.set(doc(db, 'users', participantId, 'notifications', notifId), {
-      id: notifId,
-      recipientId: participantId,
-      senderId: user.id,
-      title: truncateText(`Nova mensagem de ${myName}`, BLUEPRINT_LIMITS.NOTIF_TITLE_MAX),
-      content: truncateText(cleanText, BLUEPRINT_LIMITS.NOTIF_CONTENT_MAX),
-      type: 'MENSAGEM_CHAT',
-      read: false,
-      createdAt: serverTimestamp(),
-    });
+    if (partnerSnap?.exists()) {
+      const notifId = sanitizeId(`notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+      batch.set(doc(db, 'users', safePartnerId, 'notifications', notifId), {
+        id: notifId,
+        recipientId: safePartnerId,
+        senderId: safeMyId,
+        title: truncateText(`Nova mensagem de ${myName}`, BLUEPRINT_LIMITS.NOTIF_TITLE_MAX),
+        content: truncateText(cleanText, BLUEPRINT_LIMITS.NOTIF_CONTENT_MAX),
+        type: 'MENSAGEM_CHAT',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    }
 
     try {
       await batch.commit();

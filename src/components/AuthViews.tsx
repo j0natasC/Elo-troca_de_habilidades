@@ -12,13 +12,10 @@ import { ComumLogo } from './ComumLogo';
 import { hasFirebaseConfig } from '../firebase';
 import { api } from '../services/api';
 import {
-  checkEmailVerifiedAndEnterFirebase,
   loginWithEmailFirebase,
   registerWithEmailFirebase,
-  resendVerificationEmailFirebase,
   sendPasswordResetFirebase,
   signInWithGoogleFirebase,
-  signOutFirebase,
 } from '../services/firebaseRuntime';
 import {
   validateEmail,
@@ -32,7 +29,6 @@ import type { AuthResponse } from '../shared/types';
 export type AuthScreen =
   | 'login'
   | 'register'
-  | 'verify-email'
   | 'forgot'
   | 'verify-otp'
   | 'new-password';
@@ -83,8 +79,6 @@ export const AuthViews: React.FC<AuthViewsProps> = ({ onAuthenticated, onToast }
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [showNewPass, setShowNewPass] = useState(false);
   const [showConfirmNewPass, setShowConfirmNewPass] = useState(false);
-
-  const [pendingVerifyEmail, setPendingVerifyEmail] = useState('');
 
   const mapFirebaseAuthError = (err: unknown, fallback: string): string => {
     const code = (err as { code?: string } | null)?.code || '';
@@ -144,15 +138,7 @@ export const AuthViews: React.FC<AuthViewsProps> = ({ onAuthenticated, onToast }
         onAuthenticated(res, 'local');
       }
     } catch (err) {
-      const code = (err as { code?: string } | null)?.code || '';
-      if (code === 'elo/email-not-verified') {
-        setPendingVerifyEmail(loginEmail.trim().toLowerCase());
-        setErrorMsg(null);
-        setScreen('verify-email');
-        onToast('Confirme seu e-mail antes de entrar na rede.', 'primary');
-      } else {
-        setErrorMsg(mapFirebaseAuthError(err, 'Falha no login.'));
-      }
+      setErrorMsg(mapFirebaseAuthError(err, 'Falha no login.'));
     } finally {
       setLoading(false);
     }
@@ -194,14 +180,13 @@ export const AuthViews: React.FC<AuthViewsProps> = ({ onAuthenticated, onToast }
     setLoading(true);
     try {
       if (hasFirebaseConfig) {
-        const regRes = await registerWithEmailFirebase({
+        const res = await registerWithEmailFirebase({
           name: regName,
           email: regEmail,
           password: regPassword,
         });
-        setPendingVerifyEmail(regRes.email);
-        setScreen('verify-email');
-        onToast('Link de confirmação enviado para o seu e-mail!', 'success');
+        onToast('Conta criada e sincronizada na nuvem!', 'success');
+        onAuthenticated(res, 'firebase');
       } else {
         const res = await api.register({
           name: regName,
@@ -215,39 +200,6 @@ export const AuthViews: React.FC<AuthViewsProps> = ({ onAuthenticated, onToast }
       }
     } catch (err) {
       setErrorMsg(mapFirebaseAuthError(err, 'Erro ao criar conta.'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCheckEmailVerification = async () => {
-    setErrorMsg(null);
-    setLoading(true);
-    try {
-      const res = await checkEmailVerifiedAndEnterFirebase();
-      if (!res) {
-        setErrorMsg(
-          'Ainda não detectamos a confirmação. Abra o e-mail recebido (confira também o Spam), clique no link e tente novamente.',
-        );
-        return;
-      }
-      onToast('E-mail confirmado! Perfil sincronizado na nuvem.', 'success');
-      onAuthenticated(res, 'firebase');
-    } catch (err) {
-      setErrorMsg(mapFirebaseAuthError(err, 'Erro ao validar confirmação de e-mail.'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendVerification = async () => {
-    setErrorMsg(null);
-    setLoading(true);
-    try {
-      await resendVerificationEmailFirebase();
-      onToast('Novo link de confirmação enviado!', 'success');
-    } catch (err) {
-      setErrorMsg(mapFirebaseAuthError(err, 'Não foi possível reenviar o e-mail agora.'));
     } finally {
       setLoading(false);
     }
@@ -658,8 +610,8 @@ export const AuthViews: React.FC<AuthViewsProps> = ({ onAuthenticated, onToast }
 
               {hasFirebaseConfig && (
                 <div className="mb-4 rounded-xl bg-[#51A644]/10 border border-[#51A644]/30 px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
-                  Após o cadastro, enviaremos um link rápido para validar seu e-mail e liberar seu perfil para{' '}
-                  <strong>todos os membros em tempo real</strong>.
+                  Cadastro instantâneo sem confirmação de e-mail: use qualquer endereço no formato{' '}
+                  <strong>nome@exemplo.com</strong> e sincronize seu perfil e chat na nuvem na hora.
                 </div>
               )}
 
@@ -797,53 +749,6 @@ export const AuthViews: React.FC<AuthViewsProps> = ({ onAuthenticated, onToast }
                   </button>
                 </div>
               </form>
-            </div>
-          )}
-
-          {/* EMAIL VERIFICATION SCREEN (FIREBASE) */}
-          {screen === 'verify-email' && (
-            <div className="max-w-md w-full mx-auto space-y-5 text-center">
-              <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-                Confirme seu <span className="text-[#77BC43]">e-mail</span>
-              </h1>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                Enviamos um link de confirmação para{' '}
-                <strong className="text-slate-900 dark:text-white">{pendingVerifyEmail || 'seu e-mail'}</strong>.
-                Clique no link recebido (verifique também a caixa de Spam) e depois toque abaixo para entrar na rede em tempo real.
-              </p>
-
-              <div className="space-y-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => void handleCheckEmailVerification()}
-                  disabled={loading}
-                  className="w-full h-12 rounded-xl bg-[#51A644] hover:bg-[#448e39] text-white font-semibold text-sm shadow-sm flex items-center justify-center"
-                >
-                  {loading ? <IonSpinner name="crescent" className="w-5 h-5" /> : 'Já confirmei meu e-mail — Entrar'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleResendVerification()}
-                  disabled={loading}
-                  className="w-full h-11 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium text-xs hover:bg-slate-50"
-                >
-                  Reenviar link de confirmação
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await signOutFirebase();
-                    } catch {
-                      // ignore
-                    }
-                    switchScreen('login');
-                  }}
-                  className="w-full py-2 text-xs text-slate-500 hover:underline"
-                >
-                  Voltar para o login
-                </button>
-              </div>
             </div>
           )}
 

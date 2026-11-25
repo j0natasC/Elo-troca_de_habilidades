@@ -11,10 +11,10 @@ import {
 const rulesText = fs.readFileSync(path.resolve('firestore.rules'), 'utf8');
 const blueprint = JSON.parse(fs.readFileSync(path.resolve('firebase-blueprint.json'), 'utf8'));
 
-type AuthCtx = { uid: string; emailVerified: boolean } | null;
+type AuthCtx = { uid: string } | null;
 
 function evaluateDirtyDozen(scenario: string, auth: AuthCtx, payload: Record<string, unknown>): 'ALLOW' | 'PERMISSION_DENIED' {
-  if (!auth || !auth.emailVerified) return 'PERMISSION_DENIED';
+  if (!auth || !auth.uid) return 'PERMISSION_DENIED';
 
   switch (scenario) {
     case '1_chat_sender_spoof': {
@@ -76,7 +76,8 @@ function evaluateDirtyDozen(scenario: string, auth: AuthCtx, payload: Record<str
 test('firestore.rules enforces Eight Pillars structural invariants', () => {
   assert.match(rulesText, /rules_version = '2';/);
   assert.match(rulesText, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
-  assert.match(rulesText, /request\.auth\.token\.email_verified == true/);
+  assert.match(rulesText, /request\.auth != null && request\.auth\.uid is string/);
+  assert.match(rulesText, /resource == null && \(/);
   assert.match(rulesText, /function isValidId\(id\)/);
   assert.match(rulesText, /function isValidPublicProfile\(data\)/);
   assert.match(rulesText, /function isValidPrivateUser\(data\)/);
@@ -91,7 +92,7 @@ test('firestore.rules enforces Eight Pillars structural invariants', () => {
 });
 
 test('Dirty Dozen adversarial payloads all return PERMISSION_DENIED', () => {
-  const attacker: AuthCtx = { uid: 'userA', emailVerified: true };
+  const attacker: AuthCtx = { uid: 'userA' };
 
   assert.equal(
     evaluateDirtyDozen('1_chat_sender_spoof', attacker, { senderId: 'userB' }),
