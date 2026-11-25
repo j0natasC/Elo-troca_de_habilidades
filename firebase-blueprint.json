@@ -1,0 +1,517 @@
+{
+  "entities": {
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Public directory profile without PII (email/phone/cpf isolated in PrivateUserAccount).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "fullName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "headline": {
+          "type": "string",
+          "maxLength": 140
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "locationLabel": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 260000
+        },
+        "coverUrl": {
+          "type": "string",
+          "maxLength": 260000
+        },
+        "rating": {
+          "type": "number"
+        },
+        "skills": {
+          "type": "array",
+          "description": "Bounded list of up to 12 SkillItem objects."
+        },
+        "desiredSkills": {
+          "type": "array",
+          "description": "Bounded list of up to 12 desired skill strings."
+        },
+        "featuredWorks": {
+          "type": "array",
+          "description": "Bounded list of up to 12 FeaturedWork objects."
+        },
+        "privacyPublicProfile": {
+          "type": "boolean"
+        },
+        "privacyAllowMessages": {
+          "type": "boolean"
+        },
+        "isDemo": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "fullName",
+        "headline",
+        "bio",
+        "locationLabel",
+        "avatarUrl",
+        "coverUrl",
+        "rating",
+        "skills",
+        "desiredSkills",
+        "featuredWorks",
+        "privacyPublicProfile",
+        "privacyAllowMessages",
+        "isDemo",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PrivateUserAccount": {
+      "title": "PrivateUserAccount",
+      "description": "Private user account data and preferences isolated under /users/{userId}.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 160
+        },
+        "age": {
+          "type": "number"
+        },
+        "settings": {
+          "type": "object",
+          "description": "UserSettings preferences map."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "age", "settings", "createdAt", "updatedAt"]
+    },
+    "UserNotification": {
+      "title": "UserNotification",
+      "description": "User notification document stored in /users/{userId}/notifications/{notificationId}.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recipientId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "senderId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "type": {
+          "type": "string",
+          "enum": ["PROPOSTA_TROCA", "MENSAGEM_CHAT", "AGENDAMENTO", "AVALIACAO"],
+          "maxLength": 32
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "recipientId", "senderId", "title", "content", "type", "read", "createdAt"]
+    },
+    "ChatConversation": {
+      "title": "ChatConversation",
+      "description": "Two-participant direct conversation thread.",
+      "type": "object",
+      "properties": {
+        "participantA": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "participantB": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "participantAName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "participantARole": {
+          "type": "string",
+          "maxLength": 140
+        },
+        "participantAAvatarUrl": {
+          "type": "string",
+          "maxLength": 260000
+        },
+        "participantBName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "participantBRole": {
+          "type": "string",
+          "maxLength": 140
+        },
+        "participantBAvatarUrl": {
+          "type": "string",
+          "maxLength": 260000
+        },
+        "unreadA": {
+          "type": "number"
+        },
+        "unreadB": {
+          "type": "number"
+        },
+        "lastMessageText": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "lastSenderId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "participantA",
+        "participantB",
+        "participantAName",
+        "participantARole",
+        "participantAAvatarUrl",
+        "participantBName",
+        "participantBRole",
+        "participantBAvatarUrl",
+        "unreadA",
+        "unreadB",
+        "lastMessageText",
+        "lastSenderId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Individual message inside a ChatConversation subcollection.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "senderId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "participants": {
+          "type": "array",
+          "description": "Fixed 2-element array [participantA, participantB] for query enforcement."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "sentAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "senderId", "senderName", "participants", "text", "sentAt"]
+    },
+    "ExchangeProposal": {
+      "title": "ExchangeProposal",
+      "description": "Skill exchange proposal and scheduling agreement between two members.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "proposerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "proposerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "proposerAvatarUrl": {
+          "type": "string",
+          "maxLength": 260000
+        },
+        "receiverId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "receiverName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "receiverAvatarUrl": {
+          "type": "string",
+          "maxLength": 260000
+        },
+        "offeredSkill": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "requestedSkill": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["Presencial", "Remoto"],
+          "maxLength": 20
+        },
+        "scheduledDate": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 40
+        },
+        "location": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDENTE", "CONTRAPROPOSTA", "CONFIRMADA", "CONCLUIDA", "CANCELADA"],
+          "maxLength": 24
+        },
+        "lastUpdatedBy": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "proposerId",
+        "proposerName",
+        "proposerAvatarUrl",
+        "receiverId",
+        "receiverName",
+        "receiverAvatarUrl",
+        "offeredSkill",
+        "requestedSkill",
+        "mode",
+        "scheduledDate",
+        "location",
+        "notes",
+        "status",
+        "lastUpdatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ExchangeReview": {
+      "title": "ExchangeReview",
+      "description": "Review submitted by a participant once an exchange reaches CONCLUIDA.",
+      "type": "object",
+      "properties": {
+        "reviewerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reviewerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "exchangeParticipants": {
+          "type": "array",
+          "description": "Fixed 2-element array [proposerId, receiverId] for query enforcement."
+        },
+        "rating": {
+          "type": "number"
+        },
+        "comment": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["reviewerId", "reviewerName", "exchangeParticipants", "rating", "comment", "createdAt"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Help center support request submitted by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120
+        },
+        "message": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 1500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "userId", "subject", "message", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/publicProfiles/{profileId}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Public directory cards for community discovery; excludes private PII."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/PrivateUserAccount" },
+      "description": "Private user account PII and application settings."
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/UserNotification" },
+      "description": "Per-user real-time notifications."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatConversation" },
+      "description": "Direct two-participant chat conversation metadata."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Real-time messages inside a direct chat conversation."
+    },
+    "/exchanges/{exchangeId}": {
+      "schema": { "$ref": "#/entities/ExchangeProposal" },
+      "description": "Skill exchange proposals and scheduling state."
+    },
+    "/exchanges/{exchangeId}/reviews/{reviewerId}": {
+      "schema": { "$ref": "#/entities/ExchangeReview" },
+      "description": "Participant reviews for completed exchanges."
+    },
+    "/supportTickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/SupportTicket" },
+      "description": "Help center support tickets submitted by users."
+    }
+  }
+}

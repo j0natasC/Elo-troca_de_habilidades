@@ -1,0 +1,6 @@
+{
+  "name": "ComumIdeias",
+  "description": "Comunidade colaborativa em Ionic e TypeScript para compartilhar habilidades, talentos e ideias criativas, com backend REST compativel com Java Spring Boot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

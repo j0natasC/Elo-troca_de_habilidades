@@ -1,0 +1,587 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Phase 3: Global Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll([
+        'uid',
+        'displayName',
+        'fullName',
+        'headline',
+        'bio',
+        'locationLabel',
+        'avatarUrl',
+        'coverUrl',
+        'rating',
+        'skills',
+        'desiredSkills',
+        'featuredWorks',
+        'privacyPublicProfile',
+        'privacyAllowMessages',
+        'isDemo',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'uid',
+        'displayName',
+        'fullName',
+        'headline',
+        'bio',
+        'locationLabel',
+        'avatarUrl',
+        'coverUrl',
+        'rating',
+        'skills',
+        'desiredSkills',
+        'featuredWorks',
+        'privacyPublicProfile',
+        'privacyAllowMessages',
+        'isDemo',
+        'createdAt',
+        'updatedAt'
+      ])
+      && isValidId(data.uid)
+      && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+      && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 120
+      && data.headline is string && data.headline.size() <= 140
+      && data.bio is string && data.bio.size() <= 600
+      && data.locationLabel is string && data.locationLabel.size() <= 120
+      && data.avatarUrl is string && data.avatarUrl.size() <= 260000
+      && data.coverUrl is string && data.coverUrl.size() <= 260000
+      && data.rating is number && data.rating >= 0 && data.rating <= 5
+      && data.skills is list && data.skills.size() <= 12
+      && (data.skills.size() == 0 || (data.skills[0] is map && data.skills[0].name is string && data.skills[0].name.size() <= 80))
+      && data.desiredSkills is list && data.desiredSkills.size() <= 12
+      && (data.desiredSkills.size() == 0 || (data.desiredSkills[0] is string && data.desiredSkills[0].size() <= 80))
+      && data.featuredWorks is list && data.featuredWorks.size() <= 12
+      && (data.featuredWorks.size() == 0 || (data.featuredWorks[0] is map && data.featuredWorks[0].title is string && data.featuredWorks[0].title.size() <= 120))
+      && data.privacyPublicProfile is bool
+      && data.privacyAllowMessages is bool
+      && data.isDemo is bool
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidPrivateUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'age', 'settings', 'createdAt', 'updatedAt'])
+      && data.keys().hasOnly(['uid', 'email', 'age', 'settings', 'createdAt', 'updatedAt'])
+      && isValidId(data.uid)
+      && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+      && data.age is number && data.age >= 13 && data.age <= 120
+      && data.settings is map
+      && data.settings.keys().hasAll([
+        'language',
+        'darkMode',
+        'maxDistanceKm',
+        'notificationsEmail',
+        'notificationsPush',
+        'notificationsMessages',
+        'notificationsProposals',
+        'notificationsReminders',
+        'privacyPublicProfile',
+        'privacyShowEmail',
+        'privacyAllowMessages'
+      ])
+      && data.settings.keys().hasOnly([
+        'language',
+        'darkMode',
+        'maxDistanceKm',
+        'notificationsEmail',
+        'notificationsPush',
+        'notificationsMessages',
+        'notificationsProposals',
+        'notificationsReminders',
+        'privacyPublicProfile',
+        'privacyShowEmail',
+        'privacyAllowMessages'
+      ])
+      && data.settings.language in ['pt-BR', 'en-US']
+      && data.settings.darkMode is bool
+      && data.settings.maxDistanceKm is number && data.settings.maxDistanceKm >= 5 && data.settings.maxDistanceKm <= 100
+      && data.settings.notificationsEmail is bool
+      && data.settings.notificationsPush is bool
+      && data.settings.notificationsMessages is bool
+      && data.settings.notificationsProposals is bool
+      && data.settings.notificationsReminders is bool
+      && data.settings.privacyPublicProfile is bool
+      && data.settings.privacyShowEmail is bool
+      && data.settings.privacyAllowMessages is bool
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'recipientId', 'senderId', 'title', 'content', 'type', 'read', 'createdAt'])
+      && data.keys().hasOnly(['id', 'recipientId', 'senderId', 'title', 'content', 'type', 'read', 'createdAt'])
+      && isValidId(data.id)
+      && isValidId(data.recipientId)
+      && isValidId(data.senderId)
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+      && data.content is string && data.content.size() >= 1 && data.content.size() <= 300
+      && data.type in ['PROPOSTA_TROCA', 'MENSAGEM_CHAT', 'AGENDAMENTO', 'AVALIACAO']
+      && data.read is bool
+      && data.createdAt is timestamp;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll([
+        'participantA',
+        'participantB',
+        'participantAName',
+        'participantARole',
+        'participantAAvatarUrl',
+        'participantBName',
+        'participantBRole',
+        'participantBAvatarUrl',
+        'unreadA',
+        'unreadB',
+        'lastMessageText',
+        'lastSenderId',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'participantA',
+        'participantB',
+        'participantAName',
+        'participantARole',
+        'participantAAvatarUrl',
+        'participantBName',
+        'participantBRole',
+        'participantBAvatarUrl',
+        'unreadA',
+        'unreadB',
+        'lastMessageText',
+        'lastSenderId',
+        'createdAt',
+        'updatedAt'
+      ])
+      && isValidId(data.participantA)
+      && isValidId(data.participantB)
+      && data.participantA < data.participantB
+      && isValidId(data.lastSenderId)
+      && (data.lastSenderId == data.participantA || data.lastSenderId == data.participantB)
+      && data.participantAName is string && data.participantAName.size() >= 1 && data.participantAName.size() <= 120
+      && data.participantARole is string && data.participantARole.size() <= 140
+      && data.participantAAvatarUrl is string && data.participantAAvatarUrl.size() <= 260000
+      && data.participantBName is string && data.participantBName.size() >= 1 && data.participantBName.size() <= 120
+      && data.participantBRole is string && data.participantBRole.size() <= 140
+      && data.participantBAvatarUrl is string && data.participantBAvatarUrl.size() <= 260000
+      && data.unreadA is number && data.unreadA >= 0 && data.unreadA <= 9999
+      && data.unreadB is number && data.unreadB >= 0 && data.unreadB <= 9999
+      && data.lastMessageText is string && data.lastMessageText.size() <= 1000
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['id', 'senderId', 'senderName', 'participants', 'text', 'sentAt'])
+      && data.keys().hasOnly(['id', 'senderId', 'senderName', 'participants', 'text', 'sentAt'])
+      && isValidId(data.id)
+      && isValidId(data.senderId)
+      && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 120
+      && data.participants is list && data.participants.size() == 2
+      && isValidId(data.participants[0]) && isValidId(data.participants[1])
+      && data.participants[0] < data.participants[1]
+      && data.senderId in data.participants
+      && data.text is string && data.text.size() >= 1 && data.text.size() <= 1000
+      && data.sentAt is timestamp;
+    }
+
+    function isValidExchange(data) {
+      return data.keys().hasAll([
+        'id',
+        'proposerId',
+        'proposerName',
+        'proposerAvatarUrl',
+        'receiverId',
+        'receiverName',
+        'receiverAvatarUrl',
+        'offeredSkill',
+        'requestedSkill',
+        'mode',
+        'scheduledDate',
+        'location',
+        'notes',
+        'status',
+        'lastUpdatedBy',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id',
+        'proposerId',
+        'proposerName',
+        'proposerAvatarUrl',
+        'receiverId',
+        'receiverName',
+        'receiverAvatarUrl',
+        'offeredSkill',
+        'requestedSkill',
+        'mode',
+        'scheduledDate',
+        'location',
+        'notes',
+        'status',
+        'lastUpdatedBy',
+        'createdAt',
+        'updatedAt'
+      ])
+      && isValidId(data.id)
+      && isValidId(data.proposerId)
+      && isValidId(data.receiverId)
+      && data.proposerId != data.receiverId
+      && data.proposerName is string && data.proposerName.size() >= 1 && data.proposerName.size() <= 120
+      && data.proposerAvatarUrl is string && data.proposerAvatarUrl.size() <= 260000
+      && data.receiverName is string && data.receiverName.size() >= 1 && data.receiverName.size() <= 120
+      && data.receiverAvatarUrl is string && data.receiverAvatarUrl.size() <= 260000
+      && data.offeredSkill is string && data.offeredSkill.size() >= 1 && data.offeredSkill.size() <= 120
+      && data.requestedSkill is string && data.requestedSkill.size() >= 1 && data.requestedSkill.size() <= 120
+      && data.mode in ['Presencial', 'Remoto']
+      && data.scheduledDate is string && data.scheduledDate.size() >= 4 && data.scheduledDate.size() <= 40
+      && data.location is string && data.location.size() >= 3 && data.location.size() <= 200
+      && data.notes is string && data.notes.size() <= 600
+      && data.status in ['PENDENTE', 'CONTRAPROPOSTA', 'CONFIRMADA', 'CONCLUIDA', 'CANCELADA']
+      && isValidId(data.lastUpdatedBy)
+      && (data.lastUpdatedBy == data.proposerId || data.lastUpdatedBy == data.receiverId)
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll(['reviewerId', 'reviewerName', 'exchangeParticipants', 'rating', 'comment', 'createdAt'])
+      && data.keys().hasOnly(['reviewerId', 'reviewerName', 'exchangeParticipants', 'rating', 'comment', 'createdAt'])
+      && isValidId(data.reviewerId)
+      && data.reviewerName is string && data.reviewerName.size() >= 1 && data.reviewerName.size() <= 120
+      && data.exchangeParticipants is list && data.exchangeParticipants.size() == 2
+      && isValidId(data.exchangeParticipants[0]) && isValidId(data.exchangeParticipants[1])
+      && data.reviewerId in data.exchangeParticipants
+      && data.rating is number && data.rating >= 1 && data.rating <= 5
+      && data.comment is string && data.comment.size() <= 500
+      && data.createdAt is timestamp;
+    }
+
+    function isValidSupportTicket(data) {
+      return data.keys().hasAll(['id', 'userId', 'subject', 'message', 'createdAt'])
+      && data.keys().hasOnly(['id', 'userId', 'subject', 'message', 'createdAt'])
+      && isValidId(data.id)
+      && isValidId(data.userId)
+      && data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 120
+      && data.message is string && data.message.size() >= 5 && data.message.size() <= 1500
+      && data.createdAt is timestamp;
+    }
+
+    // Connection check document (authenticated only; permission-denied proves server reachability)
+    match /test/{docId} {
+      allow get: if isSignedIn() && isValidId(docId) && docId == 'connection';
+    }
+
+    // Public directory profiles (Zero PII)
+    match /publicProfiles/{profileId} {
+      allow get: if isSignedIn() && isValidId(profileId) && (
+        profileId == request.auth.uid || existing().privacyPublicProfile == true
+      );
+      allow list: if isSignedIn() && existing().privacyPublicProfile == true;
+      allow create: if isVerifiedUser()
+        && isValidId(profileId)
+        && isValidPublicProfile(incoming())
+        && profileId == request.auth.uid
+        && incoming().uid == request.auth.uid
+        && incoming().isDemo == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(profileId)
+        && isValidPublicProfile(incoming())
+        && profileId == request.auth.uid
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().isDemo == existing().isDemo
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'fullName',
+          'headline',
+          'bio',
+          'locationLabel',
+          'avatarUrl',
+          'coverUrl',
+          'rating',
+          'skills',
+          'desiredSkills',
+          'featuredWorks',
+          'privacyPublicProfile',
+          'privacyAllowMessages',
+          'updatedAt'
+        ]);
+      allow delete: if isVerifiedUser() && isValidId(profileId) && profileId == request.auth.uid;
+    }
+
+    // Private user account data (PII isolated to owner)
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isSignedIn() && existing().uid == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidPrivateUser(incoming())
+        && userId == request.auth.uid
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidPrivateUser(incoming())
+        && userId == request.auth.uid
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'age', 'settings', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(userId) && userId == request.auth.uid;
+
+      match /notifications/{notificationId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(notificationId);
+        allow list: if isOwner(userId) && existing().recipientId == request.auth.uid;
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(notificationId)
+          && isValidNotification(incoming())
+          && incoming().id == notificationId
+          && incoming().recipientId == userId
+          && incoming().senderId == request.auth.uid
+          && incoming().read == false
+          && incoming().createdAt == request.time
+          && existsAfter(/databases/$(database)/documents/publicProfiles/$(userId));
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(notificationId)
+          && isValidNotification(incoming())
+          && userId == request.auth.uid
+          && incoming().id == existing().id
+          && incoming().recipientId == existing().recipientId
+          && incoming().senderId == existing().senderId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+        allow delete: if isVerifiedUser() && isValidId(userId) && isValidId(notificationId) && userId == request.auth.uid;
+      }
+    }
+
+    // Two-participant real-time chats
+    match /chats/{chatId} {
+      allow get: if isSignedIn() && isValidId(chatId) && (
+        existing().participantA == request.auth.uid || existing().participantB == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        existing().participantA == request.auth.uid || existing().participantB == request.auth.uid
+      );
+      allow create: if isVerifiedUser()
+        && isValidId(chatId)
+        && isValidChat(incoming())
+        && chatId == (incoming().participantA + '__' + incoming().participantB)
+        && (incoming().participantA == request.auth.uid || incoming().participantB == request.auth.uid)
+        && incoming().lastSenderId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/publicProfiles/$(incoming().participantA))
+        && exists(/databases/$(database)/documents/publicProfiles/$(incoming().participantB));
+      allow update: if isVerifiedUser()
+        && isValidId(chatId)
+        && isValidChat(incoming())
+        && (existing().participantA == request.auth.uid || existing().participantB == request.auth.uid)
+        && incoming().participantA == existing().participantA
+        && incoming().participantB == existing().participantB
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: SendMessage
+          (
+            incoming().lastSenderId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'lastMessageText',
+              'lastSenderId',
+              'unreadA',
+              'unreadB',
+              'participantAName',
+              'participantARole',
+              'participantAAvatarUrl',
+              'participantBName',
+              'participantBRole',
+              'participantBAvatarUrl',
+              'updatedAt'
+            ])
+          )
+          ||
+          // Action: MarkRead
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly(['unreadA', 'unreadB', 'updatedAt'])
+            && (
+              (existing().participantA == request.auth.uid && incoming().unreadA == 0 && incoming().unreadB == existing().unreadB)
+              ||
+              (existing().participantB == request.auth.uid && incoming().unreadB == 0 && incoming().unreadA == existing().unreadA)
+            )
+          )
+        );
+
+      match /messages/{messageId} {
+        allow get: if isSignedIn() && isValidId(chatId) && isValidId(messageId) && (
+          get(/databases/$(database)/documents/chats/$(chatId)).data.participantA == request.auth.uid ||
+          get(/databases/$(database)/documents/chats/$(chatId)).data.participantB == request.auth.uid
+        );
+        allow list: if isSignedIn()
+          && existing().participants is list
+          && existing().participants.size() == 2
+          && existing().participants[0] is string
+          && request.auth.uid in existing().participants;
+        allow create: if isVerifiedUser()
+          && isValidId(chatId)
+          && isValidId(messageId)
+          && isValidChatMessage(incoming())
+          && incoming().id == messageId
+          && incoming().senderId == request.auth.uid
+          && incoming().sentAt == request.time
+          && chatId == (incoming().participants[0] + '__' + incoming().participants[1])
+          && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.updatedAt == request.time
+          && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participantA == incoming().participants[0]
+          && getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participantB == incoming().participants[1];
+      }
+    }
+
+    // Skill exchange proposals
+    match /exchanges/{exchangeId} {
+      allow get: if isSignedIn() && isValidId(exchangeId) && (
+        existing().proposerId == request.auth.uid || existing().receiverId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        existing().proposerId == request.auth.uid || existing().receiverId == request.auth.uid
+      );
+      allow create: if isVerifiedUser()
+        && isValidId(exchangeId)
+        && isValidExchange(incoming())
+        && incoming().id == exchangeId
+        && incoming().proposerId == request.auth.uid
+        && incoming().lastUpdatedBy == request.auth.uid
+        && incoming().status == 'PENDENTE'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/publicProfiles/$(incoming().receiverId));
+      allow update: if isVerifiedUser()
+        && isValidId(exchangeId)
+        && isValidExchange(incoming())
+        && existing().status != 'CANCELADA'
+        && existing().status != 'CONCLUIDA'
+        && (existing().proposerId == request.auth.uid || existing().receiverId == request.auth.uid)
+        && incoming().id == existing().id
+        && incoming().proposerId == existing().proposerId
+        && incoming().receiverId == existing().receiverId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().lastUpdatedBy == request.auth.uid
+        && (
+          // Action: Accept
+          (
+            existing().status in ['PENDENTE', 'CONTRAPROPOSTA']
+            && existing().lastUpdatedBy != request.auth.uid
+            && incoming().status == 'CONFIRMADA'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastUpdatedBy', 'updatedAt'])
+          )
+          ||
+          // Action: Decline / Cancel
+          (
+            existing().status in ['PENDENTE', 'CONTRAPROPOSTA', 'CONFIRMADA']
+            && incoming().status == 'CANCELADA'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastUpdatedBy', 'updatedAt'])
+          )
+          ||
+          // Action: CounterProposal
+          (
+            existing().status in ['PENDENTE', 'CONTRAPROPOSTA']
+            && incoming().status == 'CONTRAPROPOSTA'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'scheduledDate',
+              'location',
+              'offeredSkill',
+              'notes',
+              'lastUpdatedBy',
+              'updatedAt'
+            ])
+          )
+          ||
+          // Action: Complete
+          (
+            existing().status == 'CONFIRMADA'
+            && incoming().status == 'CONCLUIDA'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastUpdatedBy', 'updatedAt'])
+          )
+        );
+
+      match /reviews/{reviewerId} {
+        allow get: if isSignedIn() && isValidId(exchangeId) && isValidId(reviewerId) && (
+          get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.proposerId == request.auth.uid ||
+          get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.receiverId == request.auth.uid
+        );
+        allow list: if isSignedIn()
+          && existing().exchangeParticipants is list
+          && existing().exchangeParticipants.size() == 2
+          && existing().exchangeParticipants[0] is string
+          && request.auth.uid in existing().exchangeParticipants;
+        allow create: if isVerifiedUser()
+          && isValidId(exchangeId)
+          && isValidId(reviewerId)
+          && isValidReview(incoming())
+          && reviewerId == request.auth.uid
+          && incoming().reviewerId == request.auth.uid
+          && incoming().createdAt == request.time
+          && get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.status == 'CONCLUIDA'
+          && get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.proposerId in incoming().exchangeParticipants
+          && get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.receiverId in incoming().exchangeParticipants
+          && (
+            get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.proposerId == request.auth.uid ||
+            get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.receiverId == request.auth.uid
+          );
+      }
+    }
+
+    // Help Center Support Tickets
+    match /supportTickets/{ticketId} {
+      allow get: if isOwner(existing().userId) && isValidId(ticketId);
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+      allow create: if isVerifiedUser()
+        && isValidId(ticketId)
+        && isValidSupportTicket(incoming())
+        && incoming().id == ticketId
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+    }
+  }
+}
