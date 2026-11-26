@@ -57,7 +57,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [fullName, setFullName] = useState(user.fullName);
   const [email, setEmail] = useState(user.email);
-  const [age, setAge] = useState(String(user.age));
+  const [age, setAge] = useState(user.age >= 13 ? String(user.age) : '');
   const [locationLabel, setLocationLabel] = useState(user.locationLabel);
   const [headline, setHeadline] = useState(user.headline);
   const [bio, setBio] = useState(user.bio);

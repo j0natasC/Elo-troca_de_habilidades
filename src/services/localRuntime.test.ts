@@ -63,6 +63,16 @@ test('localRuntime registers new account, prevents duplicate skills, and persist
   assert.equal(reg.user.displayName, 'Samira');
   assert.equal(reg.user.avatarUrl, '');
   assert.equal(reg.user.coverUrl, '');
+  assert.equal(reg.user.age, 0);
+  assert.equal(reg.user.headline, '');
+  assert.equal(reg.user.skills.length, 0);
+  assert.equal(reg.isNewUser, true);
+
+  await rt.addSkill({
+    name: 'Programação',
+    categoryId: 'programacao',
+    level: 'Intermediário',
+  });
 
   await assert.rejects(
     () =>
@@ -136,7 +146,13 @@ test('two registered users discover each other, chat two-way with unread counts,
   assert.equal(alineInbox.conversations[0].messages.length, 2);
   assert.equal(alineInbox.conversations[0].messages[1].text, 'Oi Aline! Claro, podemos combinar sim.');
 
-  // 3. Aline proposes exchange to Lucas -> Lucas sees pending proposal -> Lucas accepts -> Aline sees CONFIRMADA
+  // 3. Aline completes onboarding skill, proposes exchange to Lucas -> Lucas sees pending proposal -> Lucas accepts -> Aline sees CONFIRMADA
+  await rtAline.login('aline@elo.com', 'Senha@123');
+  await rtAline.addSkill({
+    name: 'Programação',
+    categoryId: 'programacao',
+    level: 'Intermediário',
+  });
   const createdEx = await rtAline.createExchange({
     receiverId: lucasAuth.user.id,
     offeredSkill: 'Programação',

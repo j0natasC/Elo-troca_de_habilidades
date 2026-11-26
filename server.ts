@@ -133,23 +133,15 @@ async function startServer() {
       displayName: extractFirstName(fullName),
       fullName,
       email: normalizedEmail,
-      age: 18,
-      headline: 'Novo membro da rede ELO+',
+      age: 0,
+      headline: '',
       bio: '',
       locationLabel: '',
       avatarUrl: '',
       coverUrl: '',
       rating: 5,
       passwordHash: hashPassword(String(password)),
-      skills: [
-        {
-          id: createNewId('sk'),
-          name: 'Programação',
-          categoryId: 'programacao',
-          level: 'Intermediário',
-          mode: 'Presencial e Remoto',
-        },
-      ],
+      skills: [],
       desiredSkills: [],
       featuredWorks: [],
       settings: {
@@ -175,7 +167,7 @@ async function startServer() {
     saveDatabase(db);
 
     const token = signAuthToken(newUser.id, newUser.email);
-    res.status(201).json({ token, user: sanitizeUser(newUser) });
+    res.status(201).json({ token, user: sanitizeUser(newUser), isNewUser: true });
   });
 
   // POST /api/auth/login
@@ -216,15 +208,17 @@ async function startServer() {
     const normalizedEmail = String(email).trim().toLowerCase();
     const db = loadDatabase();
     let user = db.users.find((u) => u.email.toLowerCase() === normalizedEmail);
+    let isNewUser = false;
 
     if (!user) {
+      isNewUser = true;
       user = {
         id: createNewId('user'),
         displayName: extractFirstName(fullName),
         fullName,
         email: normalizedEmail,
-        age: 18,
-        headline: 'Membro verificado via Google · ELO+',
+        age: 0,
+        headline: '',
         bio: '',
         locationLabel: '',
         avatarUrl: '',
@@ -257,7 +251,7 @@ async function startServer() {
     }
 
     const token = signAuthToken(user.id, user.email);
-    res.json({ token, user: sanitizeUser(user) });
+    res.json({ token, user: sanitizeUser(user), isNewUser });
   });
 
   // POST /api/auth/forgot-password

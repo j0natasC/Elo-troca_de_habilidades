@@ -1,4 +1,4 @@
-import type { AttendanceMode, CategorySlug, CreatorSpotlight } from './types';
+import type { AttendanceMode, CategorySlug, CreatorSpotlight, UserProfile } from './types';
 
 export interface ValidationResult {
   valid: boolean;
@@ -172,4 +172,50 @@ export function extractFirstName(fullName: string): string {
   const trimmed = fullName.trim();
   if (!trimmed) return 'Usuário';
   return trimmed.split(/\s+/)[0];
+}
+
+export function validateOnboardingProfile(input: {
+  fullName: string;
+  age: string | number;
+  locationLabel: string;
+  headline: string;
+  skillsCount: number;
+}): ValidationResult {
+  if (input.fullName.trim().length < 2) {
+    return { valid: false, error: 'Informe seu nome completo (mínimo 2 caracteres).' };
+  }
+
+  const rawAge = typeof input.age === 'string' ? input.age.trim() : String(input.age);
+  if (!rawAge) {
+    return { valid: false, error: 'Informe sua idade para continuar.' };
+  }
+  const parsedAge = Number(rawAge);
+  if (!Number.isFinite(parsedAge) || parsedAge < 13 || parsedAge > 120) {
+    return { valid: false, error: 'Informe uma idade válida entre 13 e 120 anos.' };
+  }
+
+  if (input.locationLabel.trim().length < 2) {
+    return { valid: false, error: 'Informe seu bairro ou cidade.' };
+  }
+
+  if (input.headline.trim().length < 2) {
+    return { valid: false, error: 'Informe seu título profissional ou área de atuação.' };
+  }
+
+  if (input.skillsCount < 1) {
+    return {
+      valid: false,
+      error: 'Cadastre pelo menos 1 habilidade que você oferece para iniciar na plataforma.',
+    };
+  }
+
+  return { valid: true };
+}
+
+export function isProfilePendingOnboarding(
+  user: Pick<UserProfile, 'isDemo' | 'headline' | 'locationLabel' | 'skills'>,
+  alreadyCompletedOrSkipped = false,
+): boolean {
+  if (user.isDemo || alreadyCompletedOrSkipped) return false;
+  return !user.headline.trim() && !user.locationLabel.trim() && user.skills.length === 0;
 }

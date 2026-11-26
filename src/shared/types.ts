@@ -170,6 +170,7 @@ export interface ConversationThread {
 export interface AuthResponse {
   token: string;
   user: UserProfile;
+  isNewUser?: boolean;
 }
 
 export interface DiscoverResponse {

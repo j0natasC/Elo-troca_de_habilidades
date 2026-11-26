@@ -245,22 +245,14 @@ export function createLocalRuntime(storageOverride?: StorageLike) {
         displayName: extractFirstName(fullName),
         fullName,
         email: normalized,
-        age: 18,
-        headline: 'Novo membro da rede ELO+',
+        age: 0,
+        headline: '',
         bio: '',
         locationLabel: '',
         avatarUrl: '',
         coverUrl: '',
         rating: 5,
-        skills: [
-          {
-            id: makeId('sk'),
-            name: 'Programação',
-            categoryId: 'programacao',
-            level: 'Intermediário',
-            mode: 'Presencial e Remoto',
-          },
-        ],
+        skills: [],
         desiredSkills: [],
         featuredWorks: [],
         settings: {
@@ -288,7 +280,7 @@ export function createLocalRuntime(storageOverride?: StorageLike) {
 
       const token = signLocalToken(newUser.id);
       activeToken = token;
-      return { token, user: sanitizeLocalUser(newUser) };
+      return { token, user: sanitizeLocalUser(newUser), isNewUser: true };
     },
 
     async googleSignIn(email: string, name: string): Promise<AuthResponse> {
@@ -304,14 +296,16 @@ export function createLocalRuntime(storageOverride?: StorageLike) {
 
       const db = loadDb();
       let user = db.users.find((u) => u.email.toLowerCase() === normalized);
+      let isNewUser = false;
       if (!user) {
+        isNewUser = true;
         user = {
           id: makeId('user'),
           displayName: extractFirstName(fullName),
           fullName,
           email: normalized,
-          age: 18,
-          headline: 'Membro verificado via Google · ELO+',
+          age: 0,
+          headline: '',
           bio: '',
           locationLabel: '',
           avatarUrl: '',
@@ -344,7 +338,7 @@ export function createLocalRuntime(storageOverride?: StorageLike) {
       }
       const token = signLocalToken(user.id);
       activeToken = token;
-      return { token, user: sanitizeLocalUser(user) };
+      return { token, user: sanitizeLocalUser(user), isNewUser };
     },
 
     async forgotPassword(identifier: string): Promise<ForgotPasswordResponse> {

@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import {
   extractFirstName,
   filterCreatorsByCategoryAndQuery,
+  isProfilePendingOnboarding,
   maskEmailAddress,
   validateEmail,
   validateExchangeProposal,
   validateNewPassword,
+  validateOnboardingProfile,
   validateOtpCode,
   validateRegistration,
 } from './validation';
@@ -139,4 +141,79 @@ test('filterCreatorsByCategoryAndQuery filters by category, modality, location, 
   assert.equal(filterCreatorsByCategoryAndQuery(sample, 'all', '', 'all', undefined, true).length, 1);
   assert.equal(filterCreatorsByCategoryAndQuery(sample, 'all', '', 'all', undefined, true)[0].id, 'c2');
   assert.equal(filterCreatorsByCategoryAndQuery(sample, 'cozinhar', '').length, 0);
+});
+
+test('validateOnboardingProfile requires real age, location, headline, and at least one skill', () => {
+  assert.equal(
+    validateOnboardingProfile({
+      fullName: 'Jonatas Costa',
+      age: '',
+      locationLabel: 'Santo Amaro',
+      headline: 'Desenvolvedor',
+      skillsCount: 1,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateOnboardingProfile({
+      fullName: 'Jonatas Costa',
+      age: '12',
+      locationLabel: 'Santo Amaro',
+      headline: 'Desenvolvedor',
+      skillsCount: 1,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateOnboardingProfile({
+      fullName: 'Jonatas Costa',
+      age: '24',
+      locationLabel: '',
+      headline: 'Desenvolvedor',
+      skillsCount: 1,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateOnboardingProfile({
+      fullName: 'Jonatas Costa',
+      age: '24',
+      locationLabel: 'Santo Amaro · SP',
+      headline: 'Desenvolvedor Web',
+      skillsCount: 0,
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateOnboardingProfile({
+      fullName: 'Jonatas Costa',
+      age: '24',
+      locationLabel: 'Santo Amaro · SP',
+      headline: 'Desenvolvedor Web',
+      skillsCount: 1,
+    }).valid,
+    true,
+  );
+});
+
+test('isProfilePendingOnboarding detects blank newly-created profiles and ignores completed or demo users', () => {
+  assert.equal(
+    isProfilePendingOnboarding({ headline: '', locationLabel: '', skills: [], isDemo: false }, false),
+    true,
+  );
+  assert.equal(
+    isProfilePendingOnboarding({ headline: '', locationLabel: '', skills: [], isDemo: true }, false),
+    false,
+  );
+  assert.equal(
+    isProfilePendingOnboarding({ headline: '', locationLabel: '', skills: [], isDemo: false }, true),
+    false,
+  );
+  assert.equal(
+    isProfilePendingOnboarding(
+      { headline: 'Designer', locationLabel: 'Pinheiros', skills: [], isDemo: false },
+      false,
+    ),
+    false,
+  );
 });

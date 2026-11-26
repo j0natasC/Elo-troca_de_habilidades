@@ -28,6 +28,7 @@ import { ExchangesView } from './components/ExchangesView';
 import { ExploreView } from './components/ExploreView';
 import { HomeView } from './components/HomeView';
 import { MessagesView } from './components/MessagesView';
+import { OnboardingView, type OnboardingPayload } from './components/OnboardingView';
 import { ProfileView } from './components/ProfileView';
 import { SettingsView } from './components/SettingsView';
 import { UserAvatar } from './components/UserAvatar';
@@ -43,7 +44,7 @@ import {
 } from './services/firebaseRuntime';
 import { isDemoEntityId } from './shared/firebaseContracts';
 import { SEED_CATEGORIES } from './shared/seedData';
-import { filterCreatorsByCategoryAndQuery } from './shared/validation';
+import { filterCreatorsByCategoryAndQuery, isProfilePendingOnboarding } from './shared/validation';
 import type {
   AttendanceMode,
   AuthResponse,
@@ -72,7 +73,26 @@ export default function App() {
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('autostart') === '1';
   });
+  const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [activeTab, setActiveTab] = useState<AppTab>('home');
+
+  const hasOnboardingDoneFlag = useCallback((uid: string): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(`eloplus_onboarding_done_${uid}`) === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const markOnboardingDoneFlag = useCallback((uid: string) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(`eloplus_onboarding_done_${uid}`, '1');
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, []);
 
   const [categories, setCategories] = useState<CategoryItem[]>(SEED_CATEGORIES);
   const [spotlights, setSpotlights] = useState<CreatorSpotlight[]>([]);
@@ -218,12 +238,15 @@ export default function App() {
         const profile = await ensureFirebaseUserProfile(fbUser);
         setSessionMode('firebase');
         setUser(profile);
+        setOnboardingRequired(
+          isProfilePendingOnboarding(profile, hasOnboardingDoneFlag(profile.id)),
+        );
       } catch {
         // Ignore silent restore error; user can sign in from AuthViews
       }
     });
     return () => unsub();
-  }, []);
+  }, [hasOnboardingDoneFlag]);
 
   const handleAuthenticated = useCallback(
     async (authRes: AuthResponse, mode: 'firebase' | 'local' = 'local') => {
@@ -232,12 +255,16 @@ export default function App() {
       setDemoExchanges([]);
       setAuthToken(authRes.token);
       setUser(authRes.user);
+      setOnboardingRequired(
+        Boolean(authRes.isNewUser) ||
+          isProfilePendingOnboarding(authRes.user, hasOnboardingDoneFlag(authRes.user.id)),
+      );
       setActiveTab('home');
       if (mode === 'local') {
         await loadAppData();
       }
     },
-    [loadAppData],
+    [hasOnboardingDoneFlag, loadAppData],
   );
 
   useEffect(() => {
@@ -321,6 +348,7 @@ export default function App() {
     setAuthToken(null);
     setSessionMode('local');
     setUser(null);
+    setOnboardingRequired(false);
     setSpotlights([]);
     setConversations([]);
     setDemoConversations([]);
@@ -340,6 +368,7 @@ export default function App() {
     setAuthToken(null);
     setSessionMode('local');
     setUser(null);
+    setOnboardingRequired(false);
     setSpotlights([]);
     setConversations([]);
     setDemoConversations([]);
@@ -349,6 +378,44 @@ export default function App() {
     setActiveParticipantId(null);
     document.documentElement.classList.remove('dark');
     showToast('Conta excluída permanentemente.', 'primary');
+  };
+
+  const handleCompleteOnboarding = async (payload: OnboardingPayload) => {
+    if (!user) return;
+    if (sessionMode === 'firebase') {
+      const updated = await firebaseRuntime.completeOnboarding(user, payload);
+      setUser(updated);
+    } else {
+      let updatedRes = await api.updateProfile({
+        fullName: payload.fullName,
+        age: payload.age,
+        locationLabel: payload.locationLabel,
+        headline: payload.headline,
+        bio: payload.bio,
+        desiredSkills: payload.desiredSkills,
+      });
+      for (const sk of payload.skills) {
+        try {
+          updatedRes = await api.addSkill(sk);
+        } catch {
+          // Skip duplicate skill if already present
+        }
+      }
+      setUser(updatedRes.user);
+      await loadAppData(true);
+    }
+    markOnboardingDoneFlag(user.id);
+    setOnboardingRequired(false);
+    setActiveTab('home');
+    showToast('Perfil inicial configurado com sucesso!', 'success');
+  };
+
+  const handleSkipOnboarding = () => {
+    if (user) {
+      markOnboardingDoneFlag(user.id);
+    }
+    setOnboardingRequired(false);
+    setActiveTab('home');
   };
 
   const handleSelectCategoryFromHome = (categoryId: CategorySlug) => {
@@ -789,6 +856,29 @@ export default function App() {
       <IonApp>
         <IonContent>
           <AuthViews onAuthenticated={handleAuthenticated} onToast={showToast} />
+        </IonContent>
+        <IonToast
+          isOpen={toastState.open}
+          message={toastState.message}
+          color={toastState.color}
+          duration={2600}
+          position="top"
+          onDidDismiss={() => setToastState((s) => ({ ...s, open: false }))}
+        />
+      </IonApp>
+    );
+  }
+
+  if (onboardingRequired) {
+    return (
+      <IonApp>
+        <IonContent>
+          <OnboardingView
+            user={user}
+            categories={categories}
+            onComplete={handleCompleteOnboarding}
+            onSkip={handleSkipOnboarding}
+          />
         </IonContent>
         <IonToast
           isOpen={toastState.open}

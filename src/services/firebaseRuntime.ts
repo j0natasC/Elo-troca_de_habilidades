@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   deleteUser,
+  getAdditionalUserInfo,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -139,7 +140,7 @@ function publicAndPrivateToUserProfile(
     age: typeof privData?.age === 'number' ? privData.age : 18,
     headline: String(pubData.headline || ''),
     bio: String(pubData.bio || ''),
-    locationLabel: String(pubData.locationLabel || 'Brasil'),
+    locationLabel: String(pubData.locationLabel || ''),
     avatarUrl: String(pubData.avatarUrl || ''),
     coverUrl: String(pubData.coverUrl || ''),
     rating: typeof pubData.rating === 'number' ? pubData.rating : 5,
@@ -251,7 +252,7 @@ async function ensureFirebaseUserProfileInternal(
       fullName,
       headline: '',
       bio: '',
-      locationLabel: 'Brasil',
+      locationLabel: '',
       avatarUrl: '',
       coverUrl: '',
       rating: 5,
@@ -308,9 +309,10 @@ async function ensureFirebaseUserProfileInternal(
 export async function signInWithGoogleFirebase(): Promise<AuthResponse> {
   googleProvider.setCustomParameters({ prompt: 'select_account' });
   const cred = await signInWithPopup(auth, googleProvider);
+  const info = getAdditionalUserInfo(cred);
   const user = await ensureFirebaseUserProfile(cred.user);
   const token = await cred.user.getIdToken();
-  return { token, user };
+  return { token, user, isNewUser: Boolean(info?.isNewUser) };
 }
 
 export async function registerWithEmailFirebase(payload: {
@@ -326,7 +328,7 @@ export async function registerWithEmailFirebase(payload: {
   }
   const user = await ensureFirebaseUserProfile(cred.user, cleanName);
   const token = await cred.user.getIdToken();
-  return { token, user };
+  return { token, user, isNewUser: true };
 }
 
 export async function loginWithEmailFirebase(
@@ -737,6 +739,77 @@ export const firebaseRuntime = {
         updatedAt: serverTimestamp(),
       });
     }
+
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `publicProfiles/${user.id}`);
+    }
+
+    return nextUser;
+  },
+
+  async completeOnboarding(
+    user: UserProfile,
+    payload: {
+      fullName: string;
+      age: number;
+      locationLabel: string;
+      headline: string;
+      bio: string;
+      skills: Array<{
+        name: string;
+        categoryId: CategorySlug;
+        level: SkillItem['level'];
+        mode: AttendanceMode;
+        description?: string;
+      }>;
+      desiredSkills: string[];
+    },
+  ): Promise<UserProfile> {
+    const cleanFullName = payload.fullName.trim() || user.fullName;
+    const cleanAge = Math.max(13, Math.min(120, Math.round(Number(payload.age))));
+    const normalizedSkills: SkillItem[] = clampArray(payload.skills).map((s, idx) => ({
+      id: sanitizeId(`sk_${Date.now()}_${idx}`),
+      name: truncateText(s.name, BLUEPRINT_LIMITS.SKILL_NAME_MAX),
+      categoryId: s.categoryId || 'programacao',
+      level: s.level || 'Intermediário',
+      mode: s.mode || 'Presencial e Remoto',
+      description: truncateText(s.description || '', BLUEPRINT_LIMITS.BIO_MAX),
+    }));
+
+    const nextUser: UserProfile = {
+      ...user,
+      fullName: cleanFullName,
+      displayName: extractFirstName(cleanFullName),
+      age: cleanAge,
+      locationLabel: payload.locationLabel.trim(),
+      headline: payload.headline.trim(),
+      bio: payload.bio.trim(),
+      skills: normalizedSkills,
+      desiredSkills: clampArray(
+        payload.desiredSkills
+          .map((s) => truncateText(s, BLUEPRINT_LIMITS.SKILL_NAME_MAX))
+          .filter(Boolean),
+      ),
+    };
+
+    const pubPayload = normalizeUserForPublicDoc(nextUser);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'publicProfiles', user.id), {
+      displayName: pubPayload.displayName,
+      fullName: pubPayload.fullName,
+      headline: pubPayload.headline,
+      bio: pubPayload.bio,
+      locationLabel: pubPayload.locationLabel,
+      skills: pubPayload.skills,
+      desiredSkills: pubPayload.desiredSkills,
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'users', user.id), {
+      age: cleanAge,
+      updatedAt: serverTimestamp(),
+    });
 
     try {
       await batch.commit();
