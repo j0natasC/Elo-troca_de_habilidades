@@ -468,7 +468,6 @@ service cloud.firestore {
           get(/databases/$(database)/documents/chats/$(chatId)).data.participantB == request.auth.uid
         );
         allow list: if isSignedIn()
-          && existing().participants is list
           && request.auth.uid in existing().participants;
         allow create: if isAuthenticatedUser()
           && isValidId(chatId)
@@ -559,7 +558,6 @@ service cloud.firestore {
           get(/databases/$(database)/documents/exchanges/$(exchangeId)).data.receiverId == request.auth.uid
         );
         allow list: if isSignedIn()
-          && existing().exchangeParticipants is list
           && request.auth.uid in existing().exchangeParticipants;
         allow create: if isAuthenticatedUser()
           && isValidId(exchangeId)

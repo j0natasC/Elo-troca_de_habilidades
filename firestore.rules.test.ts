@@ -89,6 +89,10 @@ test('firestore.rules enforces Eight Pillars structural invariants', () => {
   assert.match(rulesText, /existing\(\)\.status != 'CANCELADA'/);
   assert.match(rulesText, /existing\(\)\.status != 'CONCLUIDA'/);
   assert.ok(!/allow (read|list):\s*if isSignedIn\(\)\s*;/.test(rulesText), 'No blanket allow list');
+  assert.ok(
+    !/allow list:[\s\S]{0,120}existing\(\)\.(participants|exchangeParticipants) is list/.test(rulesText),
+    'array-contains list rules must not add is list checks rejected by Firestore query analyzer',
+  );
 });
 
 test('Dirty Dozen adversarial payloads all return PERMISSION_DENIED', () => {

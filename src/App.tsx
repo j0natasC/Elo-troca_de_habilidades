@@ -787,7 +787,7 @@ export default function App() {
   if (!user) {
     return (
       <IonApp>
-        <IonContent fullscreen>
+        <IonContent>
           <AuthViews onAuthenticated={handleAuthenticated} onToast={showToast} />
         </IonContent>
         <IonToast

@@ -1,5 +1,6 @@
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -368,15 +369,30 @@ export function subscribeToFirebaseSession(
   callbacks: RealtimeSubscriptionsCallbacks,
 ): () => void {
   const unsubs: Array<() => void> = [];
+  let lastReportedKey = '';
   const reportSnapshotError = (error: unknown, op: OperationType, path: string) => {
     try {
       handleFirestoreError(error, op, path);
     } catch (wrapped) {
       const text = wrapped instanceof Error ? wrapped.message : String(error);
+      const scope = path.includes('/messages')
+        ? 'mensagens'
+        : path.startsWith('chats')
+          ? 'conversas'
+          : path.startsWith('publicProfiles')
+            ? 'perfis'
+            : path.includes('/reviews') || path.startsWith('exchanges')
+              ? 'trocas'
+              : path.includes('/notifications')
+                ? 'notificações'
+                : 'dados';
+      const dedupeKey = `${scope}:${text.includes('Quota exceeded') ? 'quota' : 'sync'}`;
+      if (lastReportedKey === dedupeKey) return;
+      lastReportedKey = dedupeKey;
       callbacks.onError?.(
         text.includes('Quota exceeded')
           ? 'Limite diário gratuito do Firestore atingido.'
-          : 'Erro de sincronização em tempo real com o Firebase.',
+          : `Erro de sincronização em tempo real com o Firebase (${scope}).`,
       );
     }
   };
@@ -1311,6 +1327,15 @@ export const firebaseRuntime = {
       await batch.commit();
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `users/${userId}`);
+    }
+    const current = auth.currentUser;
+    if (current && current.uid === userId) {
+      try {
+        await deleteUser(current);
+        return;
+      } catch {
+        // Fallback to signOut if Firebase requires recent login before deleteUser
+      }
     }
     await signOut(auth);
   },
